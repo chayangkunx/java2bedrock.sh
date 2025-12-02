@@ -1,8 +1,10 @@
 name: Conversion Request
 on:
-  issues:
-    types:
-      - labeled
+  workflow_dispatch:
+    inputs:
+      pack_url:
+        description: URL to convert
+        required: true
 
 jobs:
   get-pack-info:
