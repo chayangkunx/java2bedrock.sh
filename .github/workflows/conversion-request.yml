@@ -1,39 +1,96 @@
-name: Pack Conversion
-
+name: Conversion Request
 on:
   workflow_dispatch:
     inputs:
       pack_url:
-        description: "URL to convert"
+        description: Direct download URL of the Java pack to convert
         required: true
-        type: string
+      default_pack_url:
+        description: Optional default pack URL
+        required: false
+        default: ""
+      merge_pack_url:
+        description: Optional merge pack URL
+        required: false
+        default: ""
+      default_assets_version:
+        description: Default assets version
+        required: false
+        default: "1.19.3"
+      block_material:
+        description: Block material override
+        required: false
+        default: "alpha_test"
+      attachable_material:
+        description: Attachable material override
+        required: false
+        default: "entity_alphatest_one_sided"
+      archive_scratch:
+        description: Archive scratch files (true/false)
+        required: false
+        default: "false"
+      rename_model_files:
+        description: Rename model files (true/false)
+        required: false
+        default: "false"
 
 jobs:
-  convert:
+  convert-pack:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 90
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Show input
-        run: echo "Converting: ${{ github.event.inputs.pack_url }}"
-
-      - name: Download pack
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Enable default asset cache
+        id: cache-default-assets
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/work/java2bedrock.sh/java2bedrock.sh/staging/default_assets.zip
+          key: ${{ runner.os }}-${{ inputs.default_assets_version || '1.19.3' }}
+      - name: Install NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: 17
+      - name: Fix APT sources and update
         run: |
-          mkdir input
-          cd input
-          wget "${{ github.event.inputs.pack_url }}" -O pack.zip || curl -L "${{ github.event.inputs.pack_url }}" -o pack.zip
-
-      # ---- ใส่กระบวนการ Convert ของคุณตรงนี้ ----
-      - name: Convert (placeholder)
+          sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|http://archive.ubuntu.com/ubuntu|' /etc/apt/sources.list
+          sudo apt-get clean
+          sudo apt-get update
+      - name: Install dependencies
         run: |
-          mkdir output
-          echo "converted file" > output/readme.txt
-
-      # ---- ขั้นตอนสำคัญมาก: Upload Artifact ----
-      - name: Upload Converted Pack
+          sudo apt-get install -y --fix-missing moreutils zip imagemagick ghostscript
+          yarn global add spritesheet-js
+      - name: Convert Pack
+        id: convert-pack
+        env:
+          PACK_URL: ${{ inputs.pack_url }}
+          DEFAULT_PACK_URL: ${{ inputs.default_pack_url || 'null' }}
+          MERGE_PACK_URL: ${{ inputs.merge_pack_url || 'null' }}
+          DEFAULT_ASSETS_VERSION: ${{ inputs.default_assets_version || '1.19.3' }}
+          BLOCK_MATERIAL: ${{ inputs.block_material || 'alpha_test' }}
+          ATTACHABLE_MATERIAL: ${{ inputs.attachable_material || 'entity_alphatest_one_sided' }}
+          ARCHIVE_SCRATCH: ${{ inputs.archive_scratch || 'false' }}
+          RENAME_MODEL_FILES: ${{ inputs.rename_model_files || 'false' }}
+        run: |
+          mkdir -p staging
+          cp converter.sh staging/
+          cd staging
+          chmod +x converter.sh
+          COLUMNS=$COLUMNS-1 curl --no-styled-output -#L -o input_pack.zip "${PACK_URL}"
+          MERGE_PACK_FILE="${MERGE_PACK_URL}"
+          if [ "${MERGE_PACK_URL}" != "null" ] && [ -n "${MERGE_PACK_URL}" ]; then
+            COLUMNS=$COLUMNS-1 curl --no-styled-output -#L -o merge_pack.zip "${MERGE_PACK_URL}"
+            MERGE_PACK_FILE="merge_pack.zip"
+          fi
+          ./converter.sh input_pack.zip -w "false" -m ${MERGE_PACK_FILE} -a ${ATTACHABLE_MATERIAL} -b ${BLOCK_MATERIAL} -f ${DEFAULT_PACK_URL} -v ${DEFAULT_ASSETS_VERSION} -r ${RENAME_MODEL_FILES} -s ${ARCHIVE_SCRATCH} -u "true"
+      - name: Upload converted pack
         uses: actions/upload-artifact@v4
         with:
-          name: converted-pack
-          path: ./output/**
+          name: Pack Files
+          path: |
+            staging/target/packaged/geyser_resources.mcpack
+            staging/target/packaged/geyser_addon.mcaddon
+            staging/target/geyser_mappings.json
+            staging/target/scratch_files.zip
+            staging/config.json
