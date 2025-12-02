@@ -88,9 +88,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Pack Files
-          path: |
-            staging/target/packaged/geyser_resources.mcpack
-            staging/target/packaged/geyser_addon.mcaddon
-            staging/target/geyser_mappings.json
-            staging/target/scratch_files.zip
-            staging/config.json
+          path: output/**
